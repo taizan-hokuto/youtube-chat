@@ -1,7 +1,7 @@
 import {EventEmitter} from 'events'
 import axios from 'axios'
 import {actionToRenderer, CommentItem, parseData, usecToTime} from './parser'
-
+import {getparam} from './paramgen'
 
 /**
  * YouTubeライブチャット取得イベント
@@ -12,8 +12,9 @@ export class LiveChat extends EventEmitter {
   public liveId?: string
   private prevTime = Date.now()
   private observer?: NodeJS.Timeout
+  private continuation?: string = "unacquired"
 
-  constructor(options: {channelId: string} | {liveId: string}, private interval = 1000) {
+  constructor(options: {channelId: string} | {liveId: string}, private interval = 5000) {
     super()
     if ('channelId' in options) {
       this.channelId = options.channelId
@@ -26,12 +27,15 @@ export class LiveChat extends EventEmitter {
 
   public async start(): Promise<boolean> {
     if (this.channelId) {
-      const liveRes = await axios.get(`https://www.youtube.com/channel/${this.channelId}/live`, {headers: LiveChat.headers})
+      const liveRes = await axios.get(
+        `https://www.youtube.com/channel/${this.channelId}/live`, 
+        {headers: LiveChat.headers})
       if (liveRes.data.match(/LIVE_STREAM_OFFLINE/)) {
         this.emit('error', new Error("Live stream offline"))
         return false
       }
-      this.liveId = liveRes.data.match(/<meta property="og:image" content="https:\/\/i\.ytimg\.com\/vi\/([^\/]*)\//)[1] as string
+      this.liveId = liveRes.data.match(
+        /<meta property="og:image" content="https:\/\/i\.ytimg\.com\/vi\/([^\/]*)\//)[1] as string
     }
 
     if (!this.liveId) {
@@ -53,33 +57,40 @@ export class LiveChat extends EventEmitter {
   }
 
   private async fetchChat() {
-    const res = await axios.get(`https://www.youtube.com/live_chat?v=${this.liveId}&pbj=1`, {headers: LiveChat.headers})
-    if (res.data[1].response.contents.messageRenderer) {
+    if (this.continuation === "unacquired"){
+        this.continuation = getparam(this.liveId)
+    }
+    if (this.continuation == null) {
       this.stop("Live stream is finished")
       return
     }
-
-    const items = res.data[1].response.contents.liveChatRenderer.actions.slice(0, -1)
-      .filter((v: Action) => {
-        const messageRenderer = actionToRenderer(v)
-        if (messageRenderer !== null) {
-          if (messageRenderer) {
-            return usecToTime(messageRenderer.timestampUsec) > this.prevTime
-          }
-        }
-        return false
-      })
-      .map((v: Action) => parseData(v))
-
-    items.forEach((v: CommentItem) => {
-      this.emit('comment', v)
-    })
-
-    if (items.length > 0) {
-      this.prevTime = items[items.length - 1].timestamp
+    const res = await axios.get(
+      `https://www.youtube.com/live_chat/get_live_chat?continuation=${this.continuation}&pbj=1`,
+       { headers: LiveChat.headers });
+    if(res.data.response.responseContext.errors) {
+      this.stop("Invalid liveID or live is private/deleted.")  
     }
-  }
-
+    const contents = res.data.response.continuationContents
+    if (contents == null) {
+      this.stop("Live stream is finished")
+    return
+    }
+    const lcc = res.data.response.continuationContents.liveChatContinuation
+    const cont = lcc.continuations[0]
+    const metadata = cont.invalidationContinuationData || 
+                     cont.timedContinuationData || 
+                     cont.reloadContinuationData;
+    this.continuation = metadata.continuation
+    const items = lcc.actions
+    if (items != null) {
+      items.forEach((v:Action) => {
+        let p = parseData(v)
+        if (p != null) {
+          this.emit('comment', p);
+        }
+      });
+    }
+    }
   public on(event: 'comment', listener: (comment: CommentItem) => void): this
   public on(event: 'start', listener: (liveId: string) => void): this
   public on(event: 'end', listener: (reason?: string) => void): this

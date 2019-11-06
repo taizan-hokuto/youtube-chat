@@ -67,9 +67,10 @@ export function actionToRenderer(action: Action): LiveChatTextMessageRenderer | 
     return item.liveChatPaidMessageRenderer
   } else if (item.liveChatPaidStickerRenderer) {
     return item.liveChatPaidStickerRenderer
-  } else {
-    return item.liveChatMembershipItemRenderer!
-  }
+  } else if (item.liveChatMembershipItemRenderer){
+    return item.liveChatMembershipItemRenderer
+  } else 
+    return null
 }
 
 export function usecToTime(usec: string): number {
@@ -78,7 +79,7 @@ export function usecToTime(usec: string): number {
 
 export function parseData(data: Action): CommentItem | null {
   const messageRenderer = actionToRenderer(data)
-  if (messageRenderer === null) { return null }
+  if (messageRenderer == null) { return null }
   const message = 'message' in messageRenderer ? messageRenderer.message.runs : messageRenderer.headerSubtext.runs
 
   const ret: CommentItem = {
