@@ -56,7 +56,7 @@ function parseMessages(runs: MessageRun[]): MessageItem[] {
   })
 }
 
-export function actionToRenderer(action: Action): LiveChatTextMessageRenderer | LiveChatPaidMessageRenderer | LiveChatMembershipItemRenderer | null {
+export function actionToRenderer(action: Action): LiveChatTextMessageRenderer | LiveChatPaidMessageRenderer | LiveChatPaidStickerRenderer | LiveChatMembershipItemRenderer | null {
   if (!action.addChatItemAction) {
     return null
   }
@@ -65,9 +65,12 @@ export function actionToRenderer(action: Action): LiveChatTextMessageRenderer | 
     return item.liveChatTextMessageRenderer
   } else if (item.liveChatPaidMessageRenderer) {
     return item.liveChatPaidMessageRenderer
-  } else {
-    return item.liveChatMembershipItemRenderer!
-  }
+  } else if (item.liveChatPaidStickerRenderer) {
+    return item.liveChatPaidStickerRenderer
+  } else if (item.liveChatMembershipItemRenderer){
+    return item.liveChatMembershipItemRenderer
+  } else 
+    return null
 }
 
 export function usecToTime(usec: string): number {
@@ -76,7 +79,7 @@ export function usecToTime(usec: string): number {
 
 export function parseData(data: Action): CommentItem | null {
   const messageRenderer = actionToRenderer(data)
-  if (messageRenderer === null) { return null }
+  if (messageRenderer == null) { return null }
   const message = 'message' in messageRenderer ? messageRenderer.message.runs : messageRenderer.headerSubtext.runs
 
   const ret: CommentItem = {
@@ -103,8 +106,13 @@ export function parseData(data: Action): CommentItem | null {
       ret.isOwner = true
     }
   }
-
-  if ('purchaseAmountText' in messageRenderer) {
+  
+  if ('moneyChipTextColor' in messageRenderer) {
+    ret.superchat = {
+      amount: messageRenderer.purchaseAmountText.simpleText,
+      color: messageRenderer.backgroundColor,
+    }
+  } else if ('purchaseAmountText' in messageRenderer) {
     ret.superchat = {
       amount: messageRenderer.purchaseAmountText.simpleText,
       color: messageRenderer.bodyBackgroundColor,
